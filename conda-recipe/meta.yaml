@@ -1,0 +1,59 @@
+{% set name = "xair" %}
+{% set version = "0.0.1" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  # During development, build from the local repo. For tagged releases,
+  # switch to:
+  #   url: https://github.com/BernardUriza/xair/archive/refs/tags/v{{ version }}.tar.gz
+  #   sha256: <sha256-of-the-tarball>
+  path: ..
+
+build:
+  number: 0
+  noarch: python
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - xair = xair.__main__:main
+
+requirements:
+  host:
+    - python >=3.12
+    - pip
+    - setuptools >=64
+    - wheel
+  run:
+    - python >=3.12
+    - loguru >=0.7
+    - pydantic >=2.5
+    - typer >=0.12
+    - httpx >=0.27
+
+test:
+  imports:
+    - xair
+    - xair.dispatch
+    - xair.command_registry
+  commands:
+    - xair --help
+
+about:
+  home: https://github.com/BernardUriza/xair
+  license: MIT
+  license_file: ../LICENSE
+  summary: "X-AI-Reviewer framework — LLM-powered CLI commands wired to GitHub Actions."
+  description: |
+    xair is an engine-agnostic Python toolkit for building LLM-powered
+    pipelines (gather → format → LLM → emit) dispatched by GitHub Actions
+    workflows. Originally extracted from the Visalaw VAIR prototype.
+    Concrete consumers (e.g. bair) wire deployment-specific gatherers,
+    prompts, and emit channels on top of xair's framework plumbing.
+  doc_url: https://github.com/BernardUriza/xair
+  dev_url: https://github.com/BernardUriza/xair
+
+extra:
+  recipe-maintainers:
+    - BernardUriza
