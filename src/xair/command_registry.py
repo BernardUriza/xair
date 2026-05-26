@@ -1,39 +1,52 @@
 """Command registry -- decorator-based dispatch for /ai-* commands.
 
 Adding a new command = writing a handler function and decorating it.
-No modification to the router needed. Commands self-register.
+The framework does NOT know any specific command; it only routes the
+parsed comment to the registered handler. Consumers self-register at
+import time::
 
     @command("score")
     def handle_score(ctx: CommandContext, container: Container) -> None:
         ...
+
+This module is FRAMEWORK-GENERIC: it never imports a pipeline, a config
+dataclass, or a consumer-specific enum. CLI-flag-like ``key:value``
+tokens parsed out of a comment body land in ``CommandContext.options``;
+consumers interpret them however they want (case-insensitive comparison
+against their own enums, free-form string, etc.).
 """
 
 from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Callable
 
-from ..config.review import DeepMode
-from ..infra.constants import TEMPLATES_DIR
-from ..infra.container import Container
-from ..log import logger
+from .infra.constants import TEMPLATES_DIR
+from .infra.container import Container
+from .log import logger
 
 
 # -- Command context (parsed input) ------------------------------------
 
 @dataclass(frozen=True, slots=True)
 class CommandContext:
-    """Parsed, validated input for a command handler."""
+    """Parsed, validated input for a command handler.
+
+    ``options`` carries free-form ``key:value`` tokens parsed out of the
+    trigger comment (e.g. ``engine:claude``, ``deep``, ``nodeep``,
+    ``tier:tight``). Bare flags appear as ``{"flag_name": "true"}``.
+    Consumers map options into their own typed config dataclasses.
+    """
 
     command: str
     engine: str
     pr_num: str
     run_id: str
     repo: str
-    deep_mode: DeepMode = DeepMode.AUTO
+    options: dict[str, str] = field(default_factory=dict)
     guidance: str = ""
     raw_tail: str = ""
 
@@ -46,7 +59,7 @@ class DispatchResult:
 
     command: str
     engine: str
-    deep_mode: DeepMode = DeepMode.AUTO
+    options: dict[str, str] = field(default_factory=dict)
     executed: bool = False
 
 
@@ -55,6 +68,7 @@ class DispatchResult:
 HandlerFn = Callable[[CommandContext, Container], None]
 
 _REGISTRY: dict[str, HandlerFn] = {}
+_ACK_META: dict[str, dict[str, str]] = {}
 
 
 def command(name: str) -> Callable[[HandlerFn], HandlerFn]:
@@ -63,6 +77,14 @@ def command(name: str) -> Callable[[HandlerFn], HandlerFn]:
         _REGISTRY[name] = fn
         return fn
     return decorator
+
+
+def register_ack_meta(name: str, *, icon: str, label: str) -> None:
+    """Register an icon + label used when ack-ing the trigger comment.
+
+    Optional — without registration, :func:`ack_command` falls back to a
+    generic gear icon and the command name title-cased."""
+    _ACK_META[name] = {"icon": icon, "label": label}
 
 
 def get_handler(name: str) -> HandlerFn | None:
@@ -78,36 +100,46 @@ def registered_commands() -> frozenset[str]:
 # -- Parsing -----------------------------------------------------------
 
 _COMMAND_RE = re.compile(r"^/ai-(\S+)(.*)", re.MULTILINE)
-_ENGINE_RE = re.compile(r"engine:\s*(\S+)", re.IGNORECASE)
-_DEEP_RE = re.compile(r"\bdeep\b", re.IGNORECASE)
-_NODEEP_RE = re.compile(r"\bnodeep\b", re.IGNORECASE)
+_KV_RE = re.compile(r"\b([a-zA-Z_][\w-]*):(\S+)")
+_BARE_FLAG_RE = re.compile(r"(?<!\w):([a-zA-Z_][\w-]*)\b")  # `:flag` standalone
 
-_ENGINES = {"gpt", "claude"}
 _DEFAULT_ENGINE = "gpt"
+_KNOWN_ENGINES = frozenset({"gpt", "claude", "none"})
 
 
-def _parse_engine(text: str) -> str:
-    """Extract engine from text like 'engine:claude'."""
-    match = _ENGINE_RE.search(text)
-    if match:
-        engine = match.group(1).lower()
-        if engine in _ENGINES:
-            return engine
-        logger.warning(f"Unknown engine '{engine}' -- falling back to {_DEFAULT_ENGINE}")
-    return _DEFAULT_ENGINE
+def _parse_options(text: str) -> tuple[str, dict[str, str]]:
+    """Extract ``key:value`` tokens AND standalone ``\\bdeep\\b``-style
+    bare flags from ``text``. Returns ``(engine, options_dict)``.
 
-
-def _parse_deep_mode(text: str) -> DeepMode:
-    """Tri-state: nodeep > deep > auto."""
-    if _NODEEP_RE.search(text):
-        return DeepMode.DISABLED
-    if _DEEP_RE.search(text):
-        return DeepMode.FORCED
-    return DeepMode.AUTO
+    ``engine`` is pulled out because it's the one option every consumer
+    cares about (gpt|claude|none). All other key:value pairs land in
+    ``options`` unchanged. Bare alphanumeric words like ``deep``,
+    ``nodeep``, ``dryrun`` are also captured into options (value=``true``)
+    so consumers don't have to re-parse the same string.
+    """
+    options: dict[str, str] = {}
+    engine = _DEFAULT_ENGINE
+    for k, v in _KV_RE.findall(text):
+        key = k.lower()
+        if key == "engine":
+            val = v.lower()
+            if val in _KNOWN_ENGINES:
+                engine = val
+            else:
+                logger.warning(f"Unknown engine '{val}' -- falling back to {_DEFAULT_ENGINE}")
+        else:
+            options[key] = v
+    # Bare flags — anything looking like a single lowercase word in the tail
+    for word in re.findall(r"\b([a-z]{2,})\b", text):
+        if word in {"engine", "the", "and", "for", "with"}:
+            continue
+        # Don't overwrite an explicit key:value
+        options.setdefault(word, "true")
+    return engine, options
 
 
 def _parse_guidance(tail: str, after_match: str) -> str:
-    """Extract freeform guidance text, stripping parameters."""
+    """Extract freeform guidance text, stripping ``key:value`` tokens."""
     continuation = []
     for line in after_match.splitlines():
         if line.strip().startswith("/ai-"):
@@ -116,10 +148,7 @@ def _parse_guidance(tail: str, after_match: str) -> str:
             continuation.append(line.strip())
 
     raw = (tail + " " + " ".join(continuation)).strip() if (tail or continuation) else ""
-    cleaned = _ENGINE_RE.sub("", raw)
-    cleaned = _NODEEP_RE.sub("", cleaned)
-    cleaned = _DEEP_RE.sub("", cleaned)
-    return cleaned.strip()
+    return _KV_RE.sub("", raw).strip()
 
 
 def parse_comment(comment_body: str) -> CommandContext | None:
@@ -133,26 +162,20 @@ def parse_comment(comment_body: str) -> CommandContext | None:
     after = comment_body[match.end():]
     full_text = tail + " " + after
 
+    engine, options = _parse_options(full_text)
     return CommandContext(
         command=cmd,
-        engine=_parse_engine(full_text),
+        engine=engine,
         pr_num=os.environ.get("PR_NUM", ""),
         run_id=os.environ.get("GITHUB_RUN_ID", ""),
         repo=os.environ.get("REPO", ""),
-        deep_mode=_parse_deep_mode(full_text),
+        options=options,
         guidance=_parse_guidance(tail, after),
         raw_tail=tail,
     )
 
 
 # -- Ack helper --------------------------------------------------------
-
-_COMMAND_META: dict[str, dict[str, str]] = {
-    "review":        {"icon": "\U0001f916", "label": "Review"},
-    "retro":         {"icon": "\U0001f50d", "label": "Retro"},
-    "prompt-deploy": {"icon": "\U0001f4e6", "label": "Prompt Deploy"},
-}
-
 
 @lru_cache(maxsize=8)
 def _load_template(name: str) -> str:
@@ -161,9 +184,13 @@ def _load_template(name: str) -> str:
 
 
 def ack_command(container: Container, ctx: CommandContext) -> None:
-    """Post an acknowledgment reply to the trigger comment."""
+    """Post an acknowledgment reply to the trigger comment.
+
+    Looks up the command's icon + label in the meta registry populated by
+    :func:`register_ack_meta`. Unknown commands fall back to a generic
+    gear icon and a title-cased name."""
     run_url = f"https://github.com/{ctx.repo}/actions/runs/{ctx.run_id}"
-    meta = _COMMAND_META.get(ctx.command, {"icon": "\u2699\ufe0f", "label": ctx.command.title()})
+    meta = _ACK_META.get(ctx.command, {"icon": "⚙️", "label": ctx.command.title()})
     engine_tag = f" ({ctx.engine})" if ctx.engine != _DEFAULT_ENGINE else ""
     body = _load_template("ack").format(
         icon=meta["icon"],
