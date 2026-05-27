@@ -22,6 +22,23 @@ from .github_provider import SubprocessGitHubClient
 from ..log import logger
 
 
+class _StubLlm:
+    """No-op LlmProvider used when no OpenAI key is set.
+
+    Pipelines that bypass ``container.llm`` (BAIR Gatekeeper goes straight
+    to httpx) build a container without ever touching this. Pipelines that
+    DO call llm get a clear ConfigError instead of a silent failure or a
+    confusing import error at construction time."""
+
+    def call(self, *args, **kwargs):
+        from ..domain.exceptions import ConfigError
+        raise ConfigError(
+            "container.llm is the no-op stub (no OPENAI_API_KEY set at "
+            "Container.production() time). Set OPENAI_API_KEY or build "
+            "the container manually with your own LlmProvider implementation."
+        )
+
+
 @dataclass(slots=True)
 class Container:
     """Holds provider instances the pipeline needs.
@@ -68,9 +85,22 @@ class Container:
         else:
             logger.warning("::warning::Deep analysis OFF — neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY set. Review is GPT-only.")
 
-        from .openai_provider import OpenAIProvider  # lazy: see module header
+        # llm provider: OpenAI if the SDK is installed AND a key is set;
+        # otherwise a no-op stub. Pipelines that ACTUALLY use llm (review,
+        # remedy, etc.) will get a clear error from the stub. Pipelines
+        # that bypass container.llm (e.g. BAIR gatekeep — Anthropic via
+        # httpx) build the container without ever touching it.
+        llm: LlmProvider = _StubLlm()
+        if os.environ.get("OPENAI_API_KEY"):
+            try:
+                from .openai_provider import OpenAIProvider  # lazy: see module header
+                llm = OpenAIProvider()
+            except Exception as e:
+                logger.warning(f"::warning::OpenAI provider DEGRADED ({e}). Using stub; pipelines that call llm will fail explicitly.")
+        else:
+            logger.info("OPENAI_API_KEY not set — using stub llm. Pipelines that bypass container.llm (e.g. BAIR gatekeep) still work.")
         return cls(
-            llm=OpenAIProvider(),
+            llm=llm,
             github=SubprocessGitHubClient(),
             store=TmpFileStore(),
             actions=GitHubActionsIO(),
