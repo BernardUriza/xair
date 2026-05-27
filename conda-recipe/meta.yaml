@@ -37,8 +37,11 @@ test:
     - xair
     - xair.dispatch
     - xair.command_registry
-  commands:
-    - xair --help
+  # NO `commands:` section: xair is a FRAMEWORK with zero pre-registered
+  # commands. `xair --help` exits non-zero ("unknown command '--help'")
+  # because the dispatcher tries to route it; that's correct framework
+  # behavior. Consumers (bair, vair) register their own commands and
+  # their own `commands:` test will exercise them.
 
 about:
   home: https://github.com/BernardUriza/xair

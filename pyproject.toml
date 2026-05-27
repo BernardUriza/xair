@@ -51,6 +51,7 @@ where = ["src"]
 include = ["xair*"]
 
 [tool.setuptools.package-data]
+"xair" = ["py.typed"]
 "xair.queries" = ["*.graphql"]
 
 [tool.ruff]
