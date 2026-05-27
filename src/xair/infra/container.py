@@ -13,7 +13,12 @@ from ..contracts import ActionsIO, FileStore, GitHubClient, IssueTrackerClient, 
 from .actions_io import GitHubActionsIO
 from .file_store import TmpFileStore
 from .github_provider import SubprocessGitHubClient
-from .openai_provider import OpenAIProvider
+# OpenAIProvider is LAZY-imported below — pulling it at module level forces
+# the `openai` SDK to be installed even when the consumer uses a different
+# provider (Anthropic, custom HTTP, etc.). The `openai` extra is optional
+# in xair's pyproject; importing it eagerly here breaks consumers that
+# don't install it (e.g. an Anthropic-only BAIR Gatekeeper). The lazy form
+# in each classmethod keeps Container importable without openai installed.
 from ..log import logger
 
 
@@ -63,6 +68,7 @@ class Container:
         else:
             logger.warning("::warning::Deep analysis OFF — neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY set. Review is GPT-only.")
 
+        from .openai_provider import OpenAIProvider  # lazy: see module header
         return cls(
             llm=OpenAIProvider(),
             github=SubprocessGitHubClient(),
@@ -91,6 +97,7 @@ class Container:
         # LLM is optional for resolve mode — only Agent SDK is used
         llm: LlmProvider
         if os.environ.get("OPENAI_API_KEY"):
+            from .openai_provider import OpenAIProvider  # lazy: see module header
             llm = OpenAIProvider()
         else:
             from ..domain.exceptions import ConfigError
