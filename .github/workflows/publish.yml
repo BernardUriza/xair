@@ -1,0 +1,118 @@
+name: Publish xair to Anaconda
+
+# Cut a release + publish xair to anaconda.org by pushing a tag:
+#   git tag v0.0.2 && git push origin v0.0.2
+#
+# Modeled on free-intelligence's `publish-fi-runner.yml`. The version is
+# taken from the tag (after stripping the leading `v`) and is sed'd into
+# the recipe's `meta.yaml` at build time, so there's no drift between
+# `src/xair/__init__.py` and the published artifact.
+#
+# Required once: repo secret ANACONDA_TOKEN (a token from anaconda.org
+# with "Allow write access to the API site" + package upload scope).
+# Optional: repo variable ANACONDA_CHANNEL to upload into an org channel;
+# unset → uploads to the token owner's personal channel.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v0.0.2"
+        required: true
+
+permissions:
+  contents: write  # create the GitHub Release + upload sdist asset
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}  # login shell so the conda env from setup-miniconda is active
+    steps:
+      - name: Resolve tag + version
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          if [ "$VERSION" = "$TAG" ]; then
+            echo "::error::Tag '$TAG' does not match v<version>"; exit 1
+          fi
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ver.outputs.tag }}
+
+      - name: Guard — pyproject version matches the tag
+        run: |
+          CODE_VER=$(python3 -c "
+          import re, pathlib
+          for line in pathlib.Path('pyproject.toml').read_text().splitlines():
+              m = re.match(r'version\s*=\s*\"([^\"]+)\"', line)
+              if m: print(m.group(1)); break
+          ")
+          if [ "$CODE_VER" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::pyproject.toml version=$CODE_VER but tag says ${{ steps.ver.outputs.version }}. Bump pyproject or fix the tag."; exit 1
+          fi
+
+      - name: Build sdist (release asset)
+        run: |
+          python3 -m pip install --upgrade build
+          python3 -m build --sdist
+          ls -la dist/
+
+      - name: Create / update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          ASSET="dist/xair-${{ steps.ver.outputs.version }}.tar.gz"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+          else
+            gh release create "$TAG" "$ASSET" \
+              --title "xair ${{ steps.ver.outputs.version }}" \
+              --notes "Automated release. See commit log since the previous v* tag." \
+              --verify-tag
+          fi
+
+      - name: Set up conda + build/upload tooling
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          channels: conda-forge
+          channel-priority: strict
+
+      - name: Install conda-build + anaconda-client
+        run: conda install -n base -y conda-build anaconda-client
+
+      - name: Sync recipe version to the tag + build
+        run: |
+          RECIPE=conda-recipe
+          sed -i "s/{% set version = \"[^\"]*\" %}/{% set version = \"${{ steps.ver.outputs.version }}\" %}/" "$RECIPE/meta.yaml"
+          # --no-test because the recipe only has import smoke tests; if the
+          # build succeeded the package is fine. Skipping --test avoids creating
+          # an extra env on every CI run, ~30s saved.
+          conda build "$RECIPE" --no-test --no-anaconda-upload --output-folder "$RUNNER_TEMP/conda-out"
+
+      - name: Upload to Anaconda
+        env:
+          ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+          ANACONDA_CHANNEL: ${{ vars.ANACONDA_CHANNEL }}
+        run: |
+          if [ -z "$ANACONDA_TOKEN" ]; then
+            echo "::error::ANACONDA_TOKEN secret is not set — add it in repo Settings → Secrets, then re-run."; exit 1
+          fi
+          PKG=$(find "$RUNNER_TEMP/conda-out" -name 'xair-*.conda' -o -name 'xair-*.tar.bz2' | head -1)
+          if [ -z "$PKG" ]; then echo "::error::no built conda package found"; exit 1; fi
+          echo "Uploading: $PKG"
+          USER_FLAG=""
+          [ -n "$ANACONDA_CHANNEL" ] && USER_FLAG="-u $ANACONDA_CHANNEL"
+          # conda run -n base so the anaconda-client binary on PATH; --skip-existing
+          # so re-running a tag doesn't 409 on an already-uploaded build.
+          conda run -n base anaconda -t "$ANACONDA_TOKEN" upload $USER_FLAG --skip-existing "$PKG"
