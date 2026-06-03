@@ -100,7 +100,7 @@ def write_trace(ctx: ReviewContext, actions: ActionsIO, run_id: str = "") -> Non
     selected_rules_count = len(ctx.selected_rules.splitlines()) if ctx.selected_rules else 0
 
     trace = _TEMPLATE.format(
-        vair_version=__version__,
+        xair_version=__version__,
         pr_number=ctx.pr.number,
         pr_url=f"https://github.com/{ctx.pr.repo}/pull/{ctx.pr.number}",
         model=ctx.model,

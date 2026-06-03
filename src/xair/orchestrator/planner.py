@@ -1,4 +1,4 @@
-"""Planner stage — reads a GitHub Issue body + repo context, emits a VairPlan.
+"""Planner stage — reads a GitHub Issue body + repo context, emits a XairPlan.
 
 Uses ClaudeSDKAgentRunner with READ-ONLY tools (no Edit/Write/Bash beyond
 ``gh issue view``) so the planner cannot accidentally mutate the codebase.
@@ -20,7 +20,7 @@ from pydantic import ValidationError
 
 from ..infra.agent_runner import ClaudeSDKAgentRunner
 from ..log import logger
-from .plan import VairPlan
+from .plan import XairPlan
 
 
 PLANNER_SYSTEM_PROMPT = """\
@@ -61,7 +61,7 @@ in the workspace before emitting the step.
 
 ## Your output
 
-ONLY a single JSON document conforming to the VairPlan schema. No prose,
+ONLY a single JSON document conforming to the XairPlan schema. No prose,
 no explanation, no markdown fences. The orchestrator parses your stdout
 with json.loads().
 
@@ -181,7 +181,7 @@ class PlannerInput:
 
 @dataclass(frozen=True)
 class PlannerOutput:
-    plan: VairPlan
+    plan: XairPlan
     raw_text: str
     turns: int
     cost_usd: float
@@ -233,7 +233,7 @@ def _extract_json(raw: str) -> str:
 
 
 def run_planner(inp: PlannerInput, *, max_turns: int = 20) -> PlannerOutput:
-    """Invoke the planner agent and return a validated VairPlan."""
+    """Invoke the planner agent and return a validated XairPlan."""
 
     user_prompt = f"""\
 Umbrella GitHub Issue #{inp.issue_number} in {inp.issue_repo}:
@@ -251,7 +251,7 @@ The workspace contains a primary checkout; if the umbrella Issue spans
 multiple repos, ground steps in that repo's code paths where you have
 visibility, and emit steps for other repos based on the Issue's description.
 
-When you have enough context, emit the VairPlan JSON. Nothing else.
+When you have enough context, emit the XairPlan JSON. Nothing else.
 """
 
     runner = ClaudeSDKAgentRunner(
@@ -300,9 +300,9 @@ When you have enough context, emit the VairPlan JSON. Nothing else.
         data.pop("repo")
 
     try:
-        plan = VairPlan.model_validate(data)
+        plan = XairPlan.model_validate(data)
     except ValidationError as e:
-        raise RuntimeError(f"Planner output failed VairPlan validation: {e}")
+        raise RuntimeError(f"Planner output failed XairPlan validation: {e}")
 
     logger.info(
         f"[planner] done — {len(plan.steps)} steps, "
@@ -318,7 +318,7 @@ When you have enough context, emit the VairPlan JSON. Nothing else.
     )
 
 
-def format_plan_markdown(plan: VairPlan, *, turns: int, cost_usd: float) -> str:
+def format_plan_markdown(plan: XairPlan, *, turns: int, cost_usd: float) -> str:
     """Render the plan as a human-readable comment for the issue."""
     waves = plan.topological_waves()
 
@@ -363,7 +363,7 @@ def format_plan_markdown(plan: VairPlan, *, turns: int, cost_usd: float) -> str:
             "Post `/ai-replan` (optionally followed by feedback) to regenerate.",
             "",
             "<details>",
-            "<summary>Raw VairPlan JSON</summary>",
+            "<summary>Raw XairPlan JSON</summary>",
             "",
             "```json",
             json.dumps(plan.model_dump(mode="json"), indent=2),
@@ -378,7 +378,7 @@ def format_plan_markdown(plan: VairPlan, *, turns: int, cost_usd: float) -> str:
     return "\n".join(lines)
 
 
-def post_plan_comment(plan: VairPlan, body: str) -> str:
+def post_plan_comment(plan: XairPlan, body: str) -> str:
     """Post the rendered plan as a comment on the source Issue.
 
     Returns the comment URL (or empty string if gh CLI failed to emit one).

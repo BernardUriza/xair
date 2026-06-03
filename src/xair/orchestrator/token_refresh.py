@@ -5,7 +5,7 @@ run that crosses that boundary loses auth — git push and gh api calls start
 returning ``fatal: could not read Username for 'https://github.com'``.
 
 The fix is to mint a fresh installation token before each push. The App's
-private key is durable (lives in the VAIR_APP_PRIVATE_KEY secret); only the
+private key is durable (lives in the XAIR_APP_PRIVATE_KEY secret); only the
 installation token derived from it expires.
 
 Usage from the executor:
@@ -59,10 +59,10 @@ class TokenRefresher:
 
     @classmethod
     def from_env(cls) -> "TokenRefresher":
-        """Construct from VAIR_APP_ID + VAIR_APP_PRIVATE_KEY env vars."""
+        """Construct from XAIR_APP_ID + XAIR_APP_PRIVATE_KEY env vars."""
         return cls(
-            app_id=os.environ.get("VAIR_APP_ID", ""),
-            private_key=os.environ.get("VAIR_APP_PRIVATE_KEY", ""),
+            app_id=os.environ.get("XAIR_APP_ID", ""),
+            private_key=os.environ.get("XAIR_APP_PRIVATE_KEY", ""),
         )
 
     def _make_app_jwt(self) -> str:

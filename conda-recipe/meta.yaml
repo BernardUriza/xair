@@ -40,7 +40,7 @@ test:
   # NO `commands:` section: xair is a FRAMEWORK with zero pre-registered
   # commands. `xair --help` exits non-zero ("unknown command '--help'")
   # because the dispatcher tries to route it; that's correct framework
-  # behavior. Consumers (bair, vair) register their own commands and
+  # behavior. Consumers (bair) register their own commands and
   # their own `commands:` test will exercise them.
 
 about:
@@ -51,8 +51,7 @@ about:
   description: |
     xair is an engine-agnostic Python toolkit for building LLM-powered
     pipelines (gather → format → LLM → emit) dispatched by GitHub Actions
-    workflows. Originally extracted from the Visalaw VAIR prototype.
-    Concrete consumers (e.g. bair) wire deployment-specific gatherers,
+    workflows. Concrete consumers (e.g. bair) wire deployment-specific gatherers,
     prompts, and emit channels on top of xair's framework plumbing.
   doc_url: https://github.com/BernardUriza/xair
   dev_url: https://github.com/BernardUriza/xair

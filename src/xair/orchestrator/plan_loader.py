@@ -1,4 +1,4 @@
-"""Load a previously-posted VairPlan from an Issue's most recent XAIR comment.
+"""Load a previously-posted XairPlan from an Issue's most recent XAIR comment.
 
 The planner stage posts plans as Issue comments with the JSON embedded inside
 a ``<details>``/```json fenced block. The executor reads them back from there —
@@ -11,11 +11,11 @@ import json
 import re
 import subprocess
 
-from .plan import VairPlan
+from .plan import XairPlan
 
 
-_VAIR_AUTHOR = "xair-xair-org-ai-reviewer"
-_PLAN_SIGNATURE = "Raw VairPlan JSON"
+_XAIR_AUTHOR = "xair-xair-org-ai-reviewer"
+_PLAN_SIGNATURE = "Raw XairPlan JSON"
 _JSON_FENCE_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 
 
@@ -23,8 +23,8 @@ class PlanNotFoundError(RuntimeError):
     """No XAIR-authored plan comment exists on the target Issue."""
 
 
-def load_latest_plan(issue: int, issue_repo: str) -> VairPlan:
-    """Return the most recent VairPlan posted as a comment on (issue_repo, issue).
+def load_latest_plan(issue: int, issue_repo: str) -> XairPlan:
+    """Return the most recent XairPlan posted as a comment on (issue_repo, issue).
 
     ``issue_repo`` is where the umbrella Issue lives (e.g. ``xair-org/.github``),
     NOT the target repo of any particular step. Errors fatally when no plan
@@ -54,7 +54,7 @@ def load_latest_plan(issue: int, issue_repo: str) -> VairPlan:
     for comment in reversed(comments):
         author = (comment.get("author") or {}).get("login")
         body = comment.get("body") or ""
-        if author != _VAIR_AUTHOR:
+        if author != _XAIR_AUTHOR:
             continue
         if _PLAN_SIGNATURE not in body:
             continue
@@ -68,7 +68,7 @@ def load_latest_plan(issue: int, issue_repo: str) -> VairPlan:
         except json.JSONDecodeError:
             continue
 
-        return VairPlan.model_validate(payload)
+        return XairPlan.model_validate(payload)
 
     raise PlanNotFoundError(
         f"No XAIR-authored plan comment found on {issue_repo}#{issue}. "

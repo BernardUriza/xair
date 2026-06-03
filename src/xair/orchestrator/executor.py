@@ -1,4 +1,4 @@
-"""Executor — traverses a VairPlan DAG dispatching agents per step.
+"""Executor — traverses a XairPlan DAG dispatching agents per step.
 
 For each step in topological order:
   1. Check out a fresh branch off the step's target-repo base branch
@@ -6,7 +6,7 @@ For each step in topological order:
   3. Substance gate: refuse to push if zero Edit/Write calls
   4. Commit + push + open a draft PR with ``Part of <issue_repo>#<source_issue>``
 
-Multi-repo (PoC v3+): each ``VairStep`` declares its own ``repo``. The
+Multi-repo (PoC v3+): each ``XairStep`` declares its own ``repo``. The
 executor receives a ``workspaces: dict[str, str]`` mapping ``owner/repo``
 to a local checkout path; before running a step it switches to the
 workspace matching that step's repo. Steps in different repos land PRs
@@ -37,7 +37,7 @@ from typing import Literal
 
 from ..infra.agent_runner import ClaudeSDKAgentRunner
 from ..log import logger
-from .plan import StepType, VairPlan, VairStep
+from .plan import StepType, XairPlan, XairStep
 from .token_refresh import TokenRefresher
 
 
@@ -84,12 +84,12 @@ def _detect_base_branch(repo: str) -> str:
     return "staging-v2" if "backend" in repo else "main"
 
 
-def _branch_name(source_issue: int, step: VairStep) -> str:
+def _branch_name(source_issue: int, step: XairStep) -> str:
     safe_id = re.sub(r"[^a-zA-Z0-9-]+", "-", step.id).strip("-").lower()
     return f"xair-orch/issue-{source_issue}/{safe_id}"
 
 
-def _short_pr_title(step: VairStep, source_issue: int) -> str:
+def _short_pr_title(step: XairStep, source_issue: int) -> str:
     """First sentence of the step spec, capped + sanitized for a PR title."""
     first_line = step.spec.split("\n", 1)[0].strip()
     # Drop trailing punctuation, cap at 60 chars.
@@ -153,7 +153,7 @@ def _apply_fresh_token(refresher: TokenRefresher | None, workspace: str) -> None
     )
 
 
-def _checkout_step_branch(step: VairStep, source_issue: int, base_branch: str, workspace: str) -> str:
+def _checkout_step_branch(step: XairStep, source_issue: int, base_branch: str, workspace: str) -> str:
     """Reset workspace to a clean base + create the step's feature branch.
 
     Aborts hard if the branch already exists locally — the caller must
@@ -178,7 +178,7 @@ def _checkout_step_branch(step: VairStep, source_issue: int, base_branch: str, w
     return branch
 
 
-def _commit_and_push(step: VairStep, source_issue: int, branch: str, workspace: str) -> None:
+def _commit_and_push(step: XairStep, source_issue: int, branch: str, workspace: str) -> None:
     """Stage everything, commit if dirty, push the branch."""
     status = _run_git("status", "--porcelain", cwd=workspace).stdout.strip()
     if status:
@@ -195,7 +195,7 @@ def _commit_and_push(step: VairStep, source_issue: int, branch: str, workspace: 
 
 
 def _open_pr(
-    step: VairStep,
+    step: XairStep,
     source_issue: int,
     source_repo: str,
     base_branch: str,
@@ -251,7 +251,7 @@ def _open_pr(
     return urls[0]
 
 
-def _run_agent_for_step(step: VairStep, base_branch: str, workspace: str) -> tuple[int, int, float, str]:
+def _run_agent_for_step(step: XairStep, base_branch: str, workspace: str) -> tuple[int, int, float, str]:
     """Invoke the Claude SDK agent on this step's spec. Returns (edit_calls, turns, cost_usd, error).
 
     error is empty on success.
@@ -288,7 +288,7 @@ def _run_agent_for_step(step: VairStep, base_branch: str, workspace: str) -> tup
     return outcome.edit_calls, outcome.turns, outcome.total_cost_usd, ""
 
 
-def _branch_name_from_step(step: VairStep) -> str:
+def _branch_name_from_step(step: XairStep) -> str:
     """Used inside the agent prompt for context only — the executor controls the actual branch."""
     return f"xair-orch/.../{step.id}"
 
@@ -348,7 +348,7 @@ def _post_summary_comment(result: ExecutionResult, refresher: TokenRefresher | N
 
 
 def _resolve_workspaces(
-    plan: VairPlan, workspaces: dict[str, str] | str
+    plan: XairPlan, workspaces: dict[str, str] | str
 ) -> dict[str, str]:
     """Normalize the workspaces argument into a dict keyed by ``owner/repo``.
 
@@ -379,7 +379,7 @@ def _resolve_workspaces(
 
 
 def execute_plan(
-    plan: VairPlan,
+    plan: XairPlan,
     workspaces: dict[str, str] | str,
     *,
     refresher: TokenRefresher | None = None,
@@ -428,7 +428,7 @@ def execute_plan(
                 continue
 
             assert step.repo is not None, (
-                "VairPlan validator should have resolved step.repo before execution"
+                "XairPlan validator should have resolved step.repo before execution"
             )
             step_workspace = workspace_map[step.repo]
             step_base_branch = _detect_base_branch(step.repo)

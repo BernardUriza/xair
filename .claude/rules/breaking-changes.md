@@ -23,7 +23,7 @@ The free-intelligence philosophy in `~/Documents/free-intelligence/.claude/CLAUD
 > - NO LEGACY CODE - Refactor it now, not 'later'
 > - NO BACKWARD COMPATIBILITY HACKS - There's nothing to be compatible with"
 
-xair inherits the same posture. The first refactor (commit `6ff5a9c`) deleted 1024 lines NET by ripping out `command_registry.py`'s `DeepMode` coupling and `dispatch.py`'s 400 lines of Visalaw routing. Half of that was old "keep for compat" — without that anchor, the framework actually generalizes.
+xair inherits the same posture. The first refactor (commit `6ff5a9c`) deleted 1024 lines NET by ripping out `command_registry.py`'s `DeepMode` coupling and `dispatch.py`'s 400 lines of consumer-specific routing. Half of that was old "keep for compat" — without that anchor, the framework actually generalizes.
 
 ## How to Phrase a Breaking Commit
 
@@ -39,7 +39,7 @@ BREAKING:
   - 398-line typer CLI in __main__.py removed; xair.__main__ is now a 28-line stub.
     Consumers re-implement their own Typer CLI if they want one (see bair).
 
-Consumer migration: bair, vair must update CommandContext field access + drop the
+Consumer migration: bair must update CommandContext field access + drop the
 old typer subcommands. No deprecation shim was added.
 ```
 

@@ -46,7 +46,7 @@ What lives where
 ``xair.testing``            fakes for unit tests
 ``xair.log``                loguru configuration (CI + local)
 
-Originally extracted from the Visalaw VAIR prototype (2026-05-26).
+Engine-agnostic framework, generalized for public release.
 """
 
 __version__ = "0.0.1"

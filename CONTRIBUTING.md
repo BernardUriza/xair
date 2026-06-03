@@ -1,6 +1,6 @@
 # Contributing to xair
 
-xair is the X-AI-Reviewer framework — engine-agnostic plumbing for building LLM-powered CLI commands wired to GitHub Actions. Concrete pipelines live in CONSUMER packages (`bair`, `vair`, …); this repo holds only the framework.
+xair is the X-AI-Reviewer framework — engine-agnostic plumbing for building LLM-powered CLI commands wired to GitHub Actions. Concrete pipelines live in CONSUMER packages (e.g. `bair`); this repo holds only the framework.
 
 If you want to add a command, you almost certainly want to do it in a CONSUMER package, not in xair. See [`bair`](https://github.com/BernardUriza/.github/tree/main/bair) for an example consumer.
 
@@ -21,7 +21,7 @@ pytest                    # baseline tests should pass
 
 ## When NOT to change xair
 
-xair is the framework — it must stay generic. Before adding code, ask: would another XAIR consumer (with no knowledge of Bernard's repos, of Visalaw, etc.) need this code?
+xair is the framework — it must stay generic. Before adding code, ask: would another XAIR consumer (with no knowledge of any specific company's repos or services) need this code?
 
 - **YES** → it belongs in xair.
 - **NO** → it belongs in a consumer package.
@@ -29,7 +29,7 @@ xair is the framework — it must stay generic. Before adding code, ask: would a
 Concrete examples of things that do NOT belong in xair:
 
 - A pipeline that posts a specific kind of PR comment (`review`, `remedy`, `gatekeep` etc.) → consumer's `pipelines/`.
-- A gatherer that reads from CloudWatch, Plane, Mongo, or any service the framework can't promise universal access to → consumer's `gatherers/`.
+- A gatherer that reads from a metrics backend, issue tracker, database, or any service the framework can't promise universal access to → consumer's `gatherers/`.
 - A prompt formatter coupled to a specific business domain → consumer's `prompt/`.
 - A config dataclass for a specific pipeline → consumer's `config/`.
 
@@ -79,4 +79,4 @@ See [`RELEASE.md`](RELEASE.md). Releases are tag-driven: pushing a `v*` tag publ
 
 ## License
 
-MIT. Originally adapted from the Visalaw VAIR / XAIR Reference Implementation, 2026.
+MIT © 2026 Bernard Uriza Orozco. See [LICENSE](LICENSE).

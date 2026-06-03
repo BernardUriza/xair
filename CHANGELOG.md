@@ -22,7 +22,7 @@ Pre-1.0 (`0.x.y`): per project policy in [`.claude/rules/breaking-changes.md`](.
 
 ## [0.0.1] — 2026-05-26
 
-Initial public release. Extracted from the production [Visalaw VAIR](https://github.com/Visalaw/.github) prototype on 2026-05-26 with all consumer-specific code (`pipelines/`, `stages/`, `tools/`, `config/`, frontend, plus Visalaw-only providers like Plane) removed.
+Initial public release of the engine-agnostic framework. Consumer-specific code (`pipelines/`, `stages/`, `tools/`, `config/`, frontend, and consumer-only providers) lives in downstream consumer packages, not here.
 
 ### Added
 

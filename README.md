@@ -10,7 +10,7 @@ Install via pip OR conda; consumers register commands via decorator and call `py
 
 ## Why xair exists
 
-Extracted from the production Visalaw VAIR prototype (2026-05-26). The framework was deliberately separated from any one company's pipelines so it could be reused by other AI-engineering teams without inheriting Visalaw-specific gatherers (Plane, Mongo, CloudWatch). The first concrete consumer is [bair](https://github.com/BernardUriza/.github/tree/main/bair).
+The framework deliberately separates the reusable LLM-command engine from any one company's pipelines, so it can be reused by other AI-engineering teams without inheriting consumer-specific gatherers (issue trackers, metrics backends, databases). The first concrete consumer is [bair](https://github.com/BernardUriza/.github/tree/main/bair).
 
 ## Install
 
@@ -92,4 +92,4 @@ conda-recipe/
 
 ## License
 
-MIT. Originally adapted from the Visalaw VAIR / XAIR reference implementation, 2026.
+MIT © 2026 Bernard Uriza Orozco. See [LICENSE](LICENSE).

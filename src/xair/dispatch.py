@@ -5,7 +5,7 @@ The dispatcher's job is small and singular: parse the trigger comment
 build the I/O container, ack the comment, and run the handler.
 
 NO hardcoded command names. NO imports of concrete pipelines. The
-original VAIR dispatcher carried 400+ lines of Visalaw-specific routing
+early dispatcher carried 400+ lines of consumer-specific routing
 (claude-vs-gpt branching, deep-mode tier selection, review-via-executor
 fallbacks) — every line of that has been pushed back into the consumer's
 own pipeline handlers, where it belongs.

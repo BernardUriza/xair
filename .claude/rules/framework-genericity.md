@@ -6,7 +6,7 @@ xair is the FRAMEWORK layer. It must never import or depend on any consumer-spec
 
 A module under `src/xair/` cannot have either of the following at module load time:
 
-- `from ..config.<X> import …` — `config/` is consumer territory (lives in bair, vair, etc.)
+- `from ..config.<X> import …` — `config/` is consumer territory (lives in bair, etc.)
 - `from ..pipelines.<X> import …` — concrete pipelines are consumer territory
 - `from <optional-sdk> import …` at module top level — breaks consumers that don't install that extra
 
@@ -58,14 +58,14 @@ class OpenAIProvider:
 
 ## What "Consumer-Specific" Means
 
-When in doubt, run this check: would another XAIR consumer with NO knowledge of Visalaw/Bernard/free-intelligence need this code? If no → it belongs in that one consumer, not in xair.
+When in doubt, run this check: would another XAIR consumer with NO knowledge of any specific company or consumer repo need this code? If no → it belongs in that one consumer, not in xair.
 
 Examples:
 
 | Code | Where |
 |------|-------|
 | Generic GitHub PR-diff gatherer | xair (`gatherers/diff.py`) |
-| Visalaw's CloudWatch metrics gatherer | their consumer (`vair/gatherers/cloudwatch.py`) |
+| A CloudWatch metrics gatherer | the consumer's `gatherers/cloudwatch.py` |
 | Bernard's BAIR Gatekeeper pipeline | bair (`bair/pipelines/gatekeep.py`) |
 | Container's protocol for an issue tracker | xair (`contracts/issue_tracker.py`) |
-| Plane API client implementation | a future plugin or `bair/infra/plane_provider.py` |
+| An issue-tracker API client implementation | a future plugin or the consumer's `infra/` |

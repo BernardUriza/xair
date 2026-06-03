@@ -1,6 +1,6 @@
-"""Pydantic schema for a VairPlan — the DAG output of the orchestrator planner.
+"""Pydantic schema for a XairPlan — the DAG output of the orchestrator planner.
 
-A VairPlan is the planner's contract with the executor. Each step is a single
+A XairPlan is the planner's contract with the executor. Each step is a single
 invocation of a granular XAIR command (ai-resolve, ai-review, ai-remedy).
 Steps form a DAG via ``depends_on`` — steps with no unmet deps run in
 parallel, others wait.
@@ -29,7 +29,7 @@ class StepType(str, Enum):
     AI_REMEDY = "ai-remedy"
 
 
-class VairStep(BaseModel):
+class XairStep(BaseModel):
     """One node in the orchestration DAG."""
 
     id: str = Field(
@@ -44,7 +44,7 @@ class VairStep(BaseModel):
         pattern=_REPO_PATTERN,
         description=(
             "owner/repo where this step's PR lands. When None, falls back to "
-            "VairPlan.default_repo (legacy single-repo plans). Required for "
+            "XairPlan.default_repo (legacy single-repo plans). Required for "
             "multi-repo plans; the validator promotes the plan-level default "
             "into each step that omits it."
         ),
@@ -72,7 +72,7 @@ class VairStep(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _review_steps_must_target_a_pr(self) -> "VairStep":
+    def _review_steps_must_target_a_pr(self) -> "XairStep":
         if self.type in (StepType.AI_REVIEW, StepType.AI_REMEDY):
             if not self.target_pr_from:
                 raise ValueError(
@@ -91,7 +91,7 @@ class VairStep(BaseModel):
         return self
 
 
-class VairPlan(BaseModel):
+class XairPlan(BaseModel):
     """The orchestrator's output: an executable DAG bound to one umbrella issue.
 
     A plan binds to ONE umbrella Issue (``issue`` + ``issue_repo``) that may
@@ -131,7 +131,7 @@ class VairPlan(BaseModel):
         max_length=1500,
         description="One-paragraph plan summary for the human reviewer.",
     )
-    steps: list[VairStep] = Field(..., min_length=1, max_length=20)
+    steps: list[XairStep] = Field(..., min_length=1, max_length=20)
 
     @model_validator(mode="before")
     @classmethod
@@ -149,7 +149,7 @@ class VairPlan(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def _resolve_step_repos(self) -> "VairPlan":
+    def _resolve_step_repos(self) -> "XairPlan":
         """Fill missing ``step.repo`` from ``default_repo`` or fail loudly."""
         for step in self.steps:
             if step.repo is None:
@@ -168,7 +168,7 @@ class VairPlan(BaseModel):
         return {step.repo for step in self.steps if step.repo is not None}
 
     @model_validator(mode="after")
-    def _validate_dag(self) -> "VairPlan":
+    def _validate_dag(self) -> "XairPlan":
         ids = {s.id for s in self.steps}
         if len(ids) != len(self.steps):
             raise ValueError("Duplicate step ids in plan.")
@@ -206,7 +206,7 @@ class VairPlan(BaseModel):
 
         return self
 
-    def topological_waves(self) -> list[list[VairStep]]:
+    def topological_waves(self) -> list[list[XairStep]]:
         """Return steps grouped into parallel-executable waves.
 
         Wave N contains all steps whose deps are entirely in waves 0..N-1.
@@ -214,7 +214,7 @@ class VairPlan(BaseModel):
         """
         remaining = {s.id: set(s.depends_on) for s in self.steps}
         by_id = {s.id: s for s in self.steps}
-        waves: list[list[VairStep]] = []
+        waves: list[list[XairStep]] = []
         completed: set[str] = set()
 
         while remaining:

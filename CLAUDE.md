@@ -3,7 +3,7 @@
 **X-AI-Reviewer** — engine-agnostic framework for building LLM-powered CLI commands wired to GitHub Actions workflows. Every command is a pipeline: `gather → format → LLM → emit`.
 
 **Owner:** Bernard Uriza Orozco
-**Status:** v0.0.1 (extracted from production Visalaw VAIR prototype, 2026-05-26)
+**Status:** v0.0.1
 **Repo:** https://github.com/BernardUriza/xair
 **First consumer:** [bair](https://github.com/BernardUriza/.github/tree/main/bair)
 
@@ -62,11 +62,11 @@ conda-recipe/              # conda-build noarch recipe
 ## 🏗️ Adding a New Concept
 
 Adding a new **command** is consumer-side (see bair). The xair framework only changes when:
-- A new gatherer covers a NEW data source available to ALL consumers (e.g., a generic CI gatherer for GitLab CI, not Visalaw's CloudWatch)
+- A new gatherer covers a NEW data source available to ALL consumers (e.g., a generic CI gatherer for GitLab CI, not a consumer-specific CloudWatch gatherer)
 - A new Protocol contract is needed (add to `contracts/`)
 - A new infra provider is needed (add to `infra/`, lazy-import its SDK)
 
-**Before adding anything to xair, ask:** can the consumer (bair, vair, future XAIRs) implement this themselves? If yes, it does not belong in xair.
+**Before adding anything to xair, ask:** can the consumer (bair, future XAIRs) implement this themselves? If yes, it does not belong in xair.
 
 ---
 
@@ -102,8 +102,8 @@ def __init__(self):
 
 - [BAIR](https://github.com/BernardUriza/.github/tree/main/bair) — Bernard's instance of the X-AIR pattern
 - [free-intelligence](https://github.com/BernardUriza/free-intelligence) — first repo using BAIR Gatekeeper via App-token integration
-- Origin: production [Visalaw VAIR](https://github.com/Visalaw/.github) prototype (2026-05-26)
+- Engine-agnostic framework, generalized for public release (2026)
 
 ---
 
-**License:** MIT. Reuse and adapt freely; cite as Visalaw — VAIR / AIR / XAIR Reference Implementation, 2026.
+**License:** MIT © 2026 Bernard Uriza Orozco. Reuse and adapt freely.

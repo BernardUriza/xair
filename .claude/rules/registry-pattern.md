@@ -14,7 +14,7 @@ If you find yourself wanting to do any of the above, the logic belongs in the co
 
 ## Why It Matters
 
-The original VAIR dispatcher carried ~434 LOC of Visalaw-specific routing:
+The original dispatcher carried ~434 LOC of consumer-specific routing:
 
 ```python
 _COMMANDS = {"review", "retro", "remedy", "revert"}        # hardcoded

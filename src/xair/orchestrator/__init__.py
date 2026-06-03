@@ -1,15 +1,15 @@
 """XAIR Orchestrator — meta-agent that plans DAGs of XAIR sub-commands.
 
 The orchestrator reads a high-level GitHub Issue (labeled ``ai-ready``),
-emits an LLM-generated execution plan as a typed ``VairPlan``, and posts
+emits an LLM-generated execution plan as a typed ``XairPlan``, and posts
 the plan back as a comment for human approval. Once approved (via
 ``/ai-run``), a separate executor traverses the DAG dispatching the
 granular XAIR commands (``/ai-resolve`` per node, ``/ai-review`` when
 deps require it).
 
 PoC scope (this module today):
-    - Pydantic ``VairPlan`` schema with topological validation
-    - ``planner`` stage: Claude reads Issue body + repo context → VairPlan
+    - Pydantic ``XairPlan`` schema with topological validation
+    - ``planner`` stage: Claude reads Issue body + repo context → XairPlan
     - Comment poster: serializes plan to markdown + posts via gh CLI
 
 Out of PoC scope (follow-up):
@@ -20,7 +20,7 @@ Out of PoC scope (follow-up):
 """
 
 from .executor import ExecutionResult, StepResult, execute_plan
-from .plan import StepType, VairPlan, VairStep
+from .plan import StepType, XairPlan, XairStep
 from .plan_loader import PlanNotFoundError, load_latest_plan
 
 __all__ = [
@@ -28,8 +28,8 @@ __all__ = [
     "PlanNotFoundError",
     "StepResult",
     "StepType",
-    "VairPlan",
-    "VairStep",
+    "XairPlan",
+    "XairStep",
     "execute_plan",
     "load_latest_plan",
 ]
