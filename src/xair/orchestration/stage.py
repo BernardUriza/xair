@@ -66,7 +66,7 @@ class StageRecord:
     """Procedence record de una ejecución de Stage.
 
     Capturado por el Executor y agregado al ExecutionTrace. NO contiene el
-    output completo — solo un summary. Los outputs viven en `ExecutionResult.outputs`
+    output completo — solo un summary. Los outputs viven en `PipelineResult.outputs`
     porque pueden ser grandes o sensibles (e.g., review markdown, diff).
 
     Lo que SÍ vive aquí: nombre, status, timestamps, error string, summary.

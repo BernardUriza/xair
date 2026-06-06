@@ -19,20 +19,20 @@ from .exceptions import (
     PipelineError,
     StageError,
 )
-from .executor import ExecutionResult, Executor
+from .executor import Executor, PipelineResult
 from .pipeline import Pipeline
 from .stage import Stage, StageFn, StageRecord, StageStatus
 from .tracing import ExecutionTrace
 
 __all__ = [
     "CycleError",
-    "ExecutionResult",
     "ExecutionTrace",
     "Executor",
     "MissingDependencyError",
     "OrchestrationError",
     "Pipeline",
     "PipelineError",
+    "PipelineResult",
     "Stage",
     "StageError",
     "StageFn",
