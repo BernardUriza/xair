@@ -21,7 +21,7 @@ import os
 import time
 from dataclasses import dataclass
 
-import requests
+import httpx
 
 # PyJWT is the only viable signer for the App JWT (RS256 with PKCS#1 RSA key).
 # Imported lazily so module load doesn't fail in environments without it
@@ -81,7 +81,7 @@ class TokenRefresher:
             return self._installation_id
 
         app_jwt = self._make_app_jwt()
-        resp = requests.get(
+        resp = httpx.get(
             f"{_GITHUB_API}/app/installations",
             headers={
                 "Authorization": f"Bearer {app_jwt}",
@@ -116,7 +116,7 @@ class TokenRefresher:
 
         installation_id = self._find_installation_id()
         app_jwt = self._make_app_jwt()
-        resp = requests.post(
+        resp = httpx.post(
             f"{_GITHUB_API}/app/installations/{installation_id}/access_tokens",
             headers={
                 "Authorization": f"Bearer {app_jwt}",

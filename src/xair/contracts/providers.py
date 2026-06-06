@@ -5,7 +5,7 @@ Implementaciones en `infra/`: OpenAI, Anthropic Agent SDK, Codex CLI.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class LlmProvider(Protocol):
@@ -20,4 +20,4 @@ class LlmProvider(Protocol):
         max_tokens: int,
         temperature: float,
         json_mode: bool = True,
-    ) -> dict: ...
+    ) -> dict[str, Any]: ...

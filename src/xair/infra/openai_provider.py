@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 from openai import OpenAI, APIError, APITimeoutError
 
@@ -31,10 +32,10 @@ class OpenAIProvider:
         if not key:
             raise ConfigError("OPENAI_API_KEY is not set")
         self._client = OpenAI(api_key=key, timeout=timeout, max_retries=3)
-        self._last_usage: dict = {}
+        self._last_usage: dict[str, int] = {}
 
     @property
-    def last_usage(self) -> dict:
+    def last_usage(self) -> dict[str, int]:
         return self._last_usage
 
     def call(
@@ -46,9 +47,9 @@ class OpenAIProvider:
         max_tokens: int,
         temperature: float,
         json_mode: bool = True,
-    ) -> dict:
+    ) -> dict[str, Any]:
         resolved_model = model or OPENAI_MODEL
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "model": resolved_model,
             "max_completion_tokens": max_tokens,
             "messages": [

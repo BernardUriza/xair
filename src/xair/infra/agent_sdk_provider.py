@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from typing import Any
 
 from ..domain.exceptions import ConfigError, LlmError
 from ..log import logger
@@ -92,10 +93,10 @@ class AgentSDKProvider:
             os.environ.get("GITHUB_WORKSPACE", "."),
         )
         self._max_turns = max_turns
-        self._last_usage: dict = {}
+        self._last_usage: dict[str, int] = {}
 
     @property
-    def last_usage(self) -> dict:
+    def last_usage(self) -> dict[str, int]:
         """Token usage from the most recent call."""
         return self._last_usage
 
@@ -108,7 +109,7 @@ class AgentSDKProvider:
         max_tokens: int = 4096,  # noqa: ARG002
         temperature: float = 0.1,  # noqa: ARG002
         json_mode: bool = True,  # noqa: ARG002
-    ) -> dict:
+    ) -> dict[str, Any]:
         try:
             from claude_agent_sdk import (
                 ClaudeAgentOptions,
@@ -136,10 +137,10 @@ class AgentSDKProvider:
             output_format={"type": "json_schema", "schema": _OUTPUT_SCHEMA},
         )
 
-        structured_result: dict | None = None
+        structured_result: dict[str, Any] | None = None
         result_text = ""
         result_subtype = ""
-        total_usage: dict = {"input_tokens": 0, "output_tokens": 0}
+        total_usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
         tool_calls = 0
         turns = 0
 

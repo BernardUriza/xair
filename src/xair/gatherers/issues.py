@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..domain.issue_scoring import ScoredIssue, score_priority, score_project, score_staleness
+from ..domain.issue_scoring import ScoredIssue, score_project
 from ..domain.models import Issue
 from ..infra.constants import OPENAI_MODEL
 from ..contracts import LlmProvider

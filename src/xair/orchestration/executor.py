@@ -27,7 +27,7 @@ from .tracing import ExecutionTrace
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionResult:
+class PipelineResult:
     """Resultado de correr un Pipeline.
 
     Attributes:
@@ -58,7 +58,7 @@ class Executor:
     def __init__(self, clock: Clock | None = None) -> None:
         self._clock: Clock = clock or _SystemClock()
 
-    def run(self, pipeline: Pipeline, context: Any) -> ExecutionResult:
+    def run(self, pipeline: Pipeline, context: Any) -> PipelineResult:
         order = _topological_order(pipeline)
         outputs: dict[str, Any] = {}
         records: list[StageRecord] = []
@@ -131,7 +131,7 @@ class Executor:
             finished_at=pipeline_finished,
             records=tuple(records),
         )
-        return ExecutionResult(outputs=outputs, trace=trace, success=not aborted)
+        return PipelineResult(outputs=outputs, trace=trace, success=not aborted)
 
 
 def _topological_order(pipeline: Pipeline) -> list[str]:

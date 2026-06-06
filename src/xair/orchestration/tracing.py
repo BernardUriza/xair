@@ -7,7 +7,7 @@ Sin esto, debugar pipelines multi-stage es imposible: ¿qué corrió, en qué
 orden, qué falló, cuánto duró cada uno? El Trace responde todo.
 
 El Trace es intencionalmente lightweight: nombres + timestamps + status +
-summary corto. Outputs completos NO viven aquí — viven en `ExecutionResult.outputs`
+summary corto. Outputs completos NO viven aquí — viven en `PipelineResult.outputs`
 porque pueden ser grandes o contener data sensible (PII, diffs, prompts).
 """
 

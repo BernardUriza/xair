@@ -22,14 +22,17 @@ The renderer ONLY reads from the dataclass fields. It does NO IO and
 NO API calls — pass any extra context (PR URL, repo, review state) in
 as plain arguments. The caller is responsible for writing the output
 string to ``$GITHUB_STEP_SUMMARY`` or wherever.
+
+``render_agent_summary`` is a thin orchestrator: it concatenates the
+line-list returned by one ``_render_*`` helper per section. Each helper is
+self-contained (reads only the outcome + its args, returns its own lines
+including the trailing blank line), so the section order and output are a
+direct read of the orchestrator body.
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..domain.agent_run import AgentRunOutcome, ToolCall
-
 
 # Per-tool emoji map — keep in sync with the bash version that lived in
 # ai-dispatch.yml so reviewers see the same icons across the two paths
@@ -74,12 +77,215 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 1] + "…"
 
 
+def _render_header(
+    *,
+    kind: str,
+    repo: str,
+    pr_number: int | None,
+    review_state: str,
+    extra_header_lines: tuple[str, ...],
+) -> list[str]:
+    lines = [f"## 🛠️ XAIR {kind} run", ""]
+    if pr_number is not None and repo:
+        lines.append(
+            f"**PR:** [#{pr_number}](https://github.com/{repo}/pull/{pr_number})"
+        )
+    if repo:
+        lines.append(f"**Repo:** `{repo}`")
+    if review_state:
+        lines.append(f"**Final review state:** `{review_state}`")
+    else:
+        lines.append("**Final review state:** `(none)`")
+    lines.extend(extra_header_lines)
+    lines.append("")
+    return lines
+
+
+def _render_telemetry(outcome: AgentRunOutcome) -> list[str]:
+    cost_str = (
+        f"${outcome.total_cost_usd:.4f}" if outcome.total_cost_usd > 0 else "(n/a)"
+    )
+    return [
+        "### 📊 Run telemetry",
+        "",
+        "| Field | Value |",
+        "|---|---|",
+        f"| 💰 Cost | {cost_str} |",
+        f"| ⏱️ Duration | {_humanize_duration(outcome.duration_ms)} |",
+        f"| 🔄 Turns | {outcome.turns} |",
+        f"| 🧠 Model | `{outcome.model_name or '(unknown)'}` |",
+        f"| ⚠️ Errored | `{not outcome.succeeded}` |",
+        "",
+    ]
+
+
+def _render_token_usage(outcome: AgentRunOutcome) -> list[str]:
+    if not (
+        outcome.input_tokens
+        or outcome.output_tokens
+        or outcome.cache_read_tokens
+        or outcome.cache_creation_tokens
+    ):
+        return []
+    return [
+        "### 🎟️ Token usage",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        f"| ↘️ Input | {outcome.input_tokens:,} |",
+        f"| ↗️ Output | {outcome.output_tokens:,} |",
+        f"| 💾 Cache read | {outcome.cache_read_tokens:,} |",
+        f"| 🆕 Cache creation | {outcome.cache_creation_tokens:,} |",
+        "",
+    ]
+
+
+def _render_activity(outcome: AgentRunOutcome) -> list[str]:
+    lines = ["### 🛠️ Agent activity", ""]
+    breakdown_parts = [
+        f"{_tool_icon(name)}: {count}" for name, count in outcome.tool_breakdown
+    ]
+    fail_suffix = (
+        f" ({len(outcome.tool_failures)} failed)" if outcome.tool_failures else ""
+    )
+    lines.append(f"- **Tool calls total:** {outcome.tool_calls}{fail_suffix}")
+    if breakdown_parts:
+        lines.append("  - " + " · ".join(breakdown_parts))
+
+    if outcome.files_touched:
+        lines.append("")
+        lines.append("**📁 Files touched (Edit + Write):**")
+        for f in outcome.files_touched[:20]:
+            lines.append(f"- `{f}`")
+        if len(outcome.files_touched) > 20:
+            lines.append(f"- _…and {len(outcome.files_touched) - 20} more_")
+
+    if outcome.destructive_calls:
+        lines.append("")
+        lines.append(f"**⚠️ Destructive commands ({len(outcome.destructive_calls)}):**")
+        for cmd in outcome.destructive_calls[:10]:
+            lines.append(f"- `{_truncate(cmd.replace('`', '´'), 120)}`")
+
+    lines.append("")
+    return lines
+
+
+def _render_mermaid(outcome: AgentRunOutcome, mermaid_cap: int) -> list[str]:
+    if not outcome.tool_flow:
+        return []
+    lines = [
+        f"### 🎬 Tool flow (first {mermaid_cap} calls)",
+        "",
+        "```mermaid",
+        "sequenceDiagram",
+        "  participant A as 🤖 Agent",
+        "  participant W as 🛠️ Workspace",
+    ]
+    for call in outcome.tool_flow[:mermaid_cap]:
+        lines.append(f"  A->>W: {_mermaid_label(call)}")
+    lines.append("```")
+    lines.append("")
+    return lines
+
+
+def _render_timeline(outcome: AgentRunOutcome, timeline_cap: int) -> list[str]:
+    if not outcome.tool_flow:
+        return []
+    lines = [
+        f"<details><summary>📜 Full execution timeline ({outcome.tool_calls} tool calls)</summary>",
+        "",
+        "| # | Tool | Target |",
+        "|---|---|---|",
+    ]
+    for idx, call in enumerate(outcome.tool_flow[:timeline_cap], start=1):
+        target = f"`{call.input_summary}`" if call.input_summary else ""
+        lines.append(f"| {idx} | {_tool_icon(call.name)} | {target} |")
+    if len(outcome.tool_flow) > timeline_cap:
+        lines.append(
+            f"| … | _truncated_ | _{len(outcome.tool_flow) - timeline_cap} more calls_ |"
+        )
+    lines.append("")
+    lines.append("</details>")
+    lines.append("")
+    return lines
+
+
+def _render_reasoning(outcome: AgentRunOutcome) -> list[str]:
+    if not outcome.assistant_texts:
+        return []
+    lines = [
+        f"<details><summary>🧠 Agent reasoning ({len(outcome.assistant_texts)} text blocks)</summary>",
+        "",
+    ]
+    for text in outcome.assistant_texts[:50]:
+        # blockquote each line of the text
+        for line in text.splitlines():
+            if line.strip():
+                lines.append(f"> {line}")
+        lines.append("")
+    if len(outcome.assistant_texts) > 50:
+        lines.append(f"_…and {len(outcome.assistant_texts) - 50} more text blocks._")
+        lines.append("")
+    lines.append("</details>")
+    lines.append("")
+    return lines
+
+
+def _render_failures(outcome: AgentRunOutcome) -> list[str]:
+    if not outcome.tool_failures:
+        return []
+    lines = [
+        f"<details><summary>❌ Tool failures ({len(outcome.tool_failures)})</summary>",
+        "",
+    ]
+    for fail in outcome.tool_failures[:50]:
+        safe = fail.replace("`", "´")
+        lines.append(f"- `{_truncate(safe, 200)}`")
+    if len(outcome.tool_failures) > 50:
+        lines.append(f"- _…and {len(outcome.tool_failures) - 50} more failures_")
+    lines.append("")
+    lines.append("</details>")
+    lines.append("")
+    return lines
+
+
+def _render_error(outcome: AgentRunOutcome) -> list[str]:
+    if not outcome.error:
+        return []
+    return [
+        "### ❌ Agent error",
+        "",
+        "```",
+        _truncate(outcome.error, 1500),
+        "```",
+        "",
+    ]
+
+
+def _render_footer(outcome: AgentRunOutcome, body_override: str) -> list[str]:
+    lines = ["---", ""]
+    if body_override:
+        lines.append("### 💬 Review body")
+        lines.append("")
+        lines.append(body_override)
+    elif outcome.result_text:
+        lines.append("### 🤖 Agent final message")
+        lines.append("")
+        lines.append(_truncate(outcome.result_text, 5000))
+    else:
+        lines.append(
+            "_The agent did not post a top-level review body and produced no final text. "
+            "Check the step log above._"
+        )
+    return lines
+
+
 def render_agent_summary(
     outcome: AgentRunOutcome,
     *,
     kind: str,
     repo: str = "",
-    pr_number: Optional[int] = None,
+    pr_number: int | None = None,
     review_state: str = "",
     extra_header_lines: tuple[str, ...] = (),
     body_override: str = "",
@@ -106,176 +312,22 @@ def render_agent_summary(
         mermaid_cap: max messages in the 🎬 mermaid sequenceDiagram.
     """
     lines: list[str] = []
-
-    # ── Header ────────────────────────────────────────────────
-    lines.append(f"## 🛠️ XAIR {kind} run")
-    lines.append("")
-    if pr_number is not None and repo:
-        lines.append(
-            f"**PR:** [#{pr_number}](https://github.com/{repo}/pull/{pr_number})"
-        )
-    if repo:
-        lines.append(f"**Repo:** `{repo}`")
-    if review_state:
-        lines.append(f"**Final review state:** `{review_state}`")
-    else:
-        lines.append("**Final review state:** `(none)`")
-    for extra in extra_header_lines:
-        lines.append(extra)
-    lines.append("")
-
-    # ── 📊 Run telemetry ──────────────────────────────────────
-    lines.append("### 📊 Run telemetry")
-    lines.append("")
-    lines.append("| Field | Value |")
-    lines.append("|---|---|")
-    cost_str = (
-        f"${outcome.total_cost_usd:.4f}" if outcome.total_cost_usd > 0 else "(n/a)"
+    lines += _render_header(
+        kind=kind,
+        repo=repo,
+        pr_number=pr_number,
+        review_state=review_state,
+        extra_header_lines=extra_header_lines,
     )
-    lines.append(f"| 💰 Cost | {cost_str} |")
-    lines.append(f"| ⏱️ Duration | {_humanize_duration(outcome.duration_ms)} |")
-    lines.append(f"| 🔄 Turns | {outcome.turns} |")
-    lines.append(f"| 🧠 Model | `{outcome.model_name or '(unknown)'}` |")
-    lines.append(f"| ⚠️ Errored | `{not outcome.succeeded}` |")
-    lines.append("")
-
-    # ── 🎟️ Token usage ────────────────────────────────────────
-    if (
-        outcome.input_tokens
-        or outcome.output_tokens
-        or outcome.cache_read_tokens
-        or outcome.cache_creation_tokens
-    ):
-        lines.append("### 🎟️ Token usage")
-        lines.append("")
-        lines.append("| Metric | Value |")
-        lines.append("|---|---|")
-        lines.append(f"| ↘️ Input | {outcome.input_tokens:,} |")
-        lines.append(f"| ↗️ Output | {outcome.output_tokens:,} |")
-        lines.append(f"| 💾 Cache read | {outcome.cache_read_tokens:,} |")
-        lines.append(f"| 🆕 Cache creation | {outcome.cache_creation_tokens:,} |")
-        lines.append("")
-
-    # ── 🛠️ Agent activity ────────────────────────────────────
-    lines.append("### 🛠️ Agent activity")
-    lines.append("")
-    breakdown_parts: list[str] = []
-    for name, count in outcome.tool_breakdown:
-        breakdown_parts.append(f"{_tool_icon(name)}: {count}")
-    fail_suffix = (
-        f" ({len(outcome.tool_failures)} failed)" if outcome.tool_failures else ""
-    )
-    lines.append(f"- **Tool calls total:** {outcome.tool_calls}{fail_suffix}")
-    if breakdown_parts:
-        lines.append("  - " + " · ".join(breakdown_parts))
-
-    if outcome.files_touched:
-        lines.append("")
-        lines.append("**📁 Files touched (Edit + Write):**")
-        for f in outcome.files_touched[:20]:
-            lines.append(f"- `{f}`")
-        if len(outcome.files_touched) > 20:
-            lines.append(f"- _…and {len(outcome.files_touched) - 20} more_")
-
-    if outcome.destructive_calls:
-        lines.append("")
-        lines.append(f"**⚠️ Destructive commands ({len(outcome.destructive_calls)}):**")
-        for cmd in outcome.destructive_calls[:10]:
-            lines.append(f"- `{_truncate(cmd.replace('`', '´'), 120)}`")
-
-    lines.append("")
-
-    # ── 🎬 Tool flow (mermaid sequenceDiagram) ────────────────
-    if outcome.tool_flow:
-        lines.append(f"### 🎬 Tool flow (first {mermaid_cap} calls)")
-        lines.append("")
-        lines.append("```mermaid")
-        lines.append("sequenceDiagram")
-        lines.append("  participant A as 🤖 Agent")
-        lines.append("  participant W as 🛠️ Workspace")
-        for call in outcome.tool_flow[:mermaid_cap]:
-            lines.append(f"  A->>W: {_mermaid_label(call)}")
-        lines.append("```")
-        lines.append("")
-
-    # ── 📜 Full execution timeline (collapsible table) ────────
-    if outcome.tool_flow:
-        lines.append(
-            f"<details><summary>📜 Full execution timeline ({outcome.tool_calls} tool calls)</summary>"
-        )
-        lines.append("")
-        lines.append("| # | Tool | Target |")
-        lines.append("|---|---|---|")
-        for idx, call in enumerate(outcome.tool_flow[:timeline_cap], start=1):
-            target = f"`{call.input_summary}`" if call.input_summary else ""
-            lines.append(f"| {idx} | {_tool_icon(call.name)} | {target} |")
-        if len(outcome.tool_flow) > timeline_cap:
-            lines.append(
-                f"| … | _truncated_ | _{len(outcome.tool_flow) - timeline_cap} more calls_ |"
-            )
-        lines.append("")
-        lines.append("</details>")
-        lines.append("")
-
-    # ── 🧠 Agent reasoning (collapsible blockquotes) ──────────
-    if outcome.assistant_texts:
-        lines.append(
-            f"<details><summary>🧠 Agent reasoning ({len(outcome.assistant_texts)} text blocks)</summary>"
-        )
-        lines.append("")
-        for text in outcome.assistant_texts[:50]:
-            # blockquote each line of the text
-            for line in text.splitlines():
-                if line.strip():
-                    lines.append(f"> {line}")
-            lines.append("")
-        if len(outcome.assistant_texts) > 50:
-            lines.append(f"_…and {len(outcome.assistant_texts) - 50} more text blocks._")
-            lines.append("")
-        lines.append("</details>")
-        lines.append("")
-
-    # ── ❌ Tool failures (collapsible) ────────────────────────
-    if outcome.tool_failures:
-        lines.append(
-            f"<details><summary>❌ Tool failures ({len(outcome.tool_failures)})</summary>"
-        )
-        lines.append("")
-        for fail in outcome.tool_failures[:50]:
-            safe = fail.replace("`", "´")
-            lines.append(f"- `{_truncate(safe, 200)}`")
-        if len(outcome.tool_failures) > 50:
-            lines.append(f"- _…and {len(outcome.tool_failures) - 50} more failures_")
-        lines.append("")
-        lines.append("</details>")
-        lines.append("")
-
-    # ── Error block (only when the agent crashed) ─────────────
-    if outcome.error:
-        lines.append("### ❌ Agent error")
-        lines.append("")
-        lines.append("```")
-        lines.append(_truncate(outcome.error, 1500))
-        lines.append("```")
-        lines.append("")
-
-    # ── Footer: review body / agent final message ─────────────
-    lines.append("---")
-    lines.append("")
-    if body_override:
-        lines.append("### 💬 Review body")
-        lines.append("")
-        lines.append(body_override)
-    elif outcome.result_text:
-        lines.append("### 🤖 Agent final message")
-        lines.append("")
-        lines.append(_truncate(outcome.result_text, 5000))
-    else:
-        lines.append(
-            "_The agent did not post a top-level review body and produced no final text. "
-            "Check the step log above._"
-        )
-
+    lines += _render_telemetry(outcome)
+    lines += _render_token_usage(outcome)
+    lines += _render_activity(outcome)
+    lines += _render_mermaid(outcome, mermaid_cap)
+    lines += _render_timeline(outcome, timeline_cap)
+    lines += _render_reasoning(outcome)
+    lines += _render_failures(outcome)
+    lines += _render_error(outcome)
+    lines += _render_footer(outcome, body_override)
     return "\n".join(lines) + "\n"
 
 
