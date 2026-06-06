@@ -7,7 +7,6 @@ to anthropics/claude-code-action@v1.
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 
