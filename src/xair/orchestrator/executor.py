@@ -41,12 +41,6 @@ from .plan import StepType, XairPlan, XairStep
 from .token_refresh import TokenRefresher
 
 
-# Reuse the resolve system prompt — it already encodes the conventions
-# (tsc gate, minimal change, no AI attribution). The orchestrator's step
-# spec replaces what Plane's issue body would have been.
-from ..domain.resolve_prompts import RESOLVE_SYSTEM_PROMPT
-
-
 StepStatus = Literal["success", "failure", "skipped"]
 
 
@@ -251,8 +245,15 @@ def _open_pr(
     return urls[0]
 
 
-def _run_agent_for_step(step: XairStep, base_branch: str, workspace: str) -> tuple[int, int, float, str]:
+def _run_agent_for_step(
+    step: XairStep, base_branch: str, workspace: str, system_prompt: str
+) -> tuple[int, int, float, str]:
     """Invoke the Claude SDK agent on this step's spec. Returns (edit_calls, turns, cost_usd, error).
+
+    ``system_prompt`` is supplied by the consumer — it encodes the consumer's
+    conventions (e.g. tsc gate, minimal-change, no AI attribution). xair is
+    framework-only and must not embed a consumer's prompt; the orchestrator's
+    step spec replaces what an issue body would have provided.
 
     error is empty on success.
     """
@@ -278,7 +279,7 @@ def _run_agent_for_step(step: XairStep, base_branch: str, workspace: str) -> tup
 
     outcome = runner.run(
         user_prompt=user_prompt,
-        system_prompt=RESOLVE_SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         cwd=workspace,
         max_turns=80,
     )
@@ -378,10 +379,34 @@ def _resolve_workspaces(
     return workspaces
 
 
+def _abort(
+    result: ExecutionResult,
+    step_result: StepResult,
+    reason: str,
+    *,
+    refresher: TokenRefresher | None,
+    workspace: str,
+) -> ExecutionResult:
+    """Record a failed step, mark the run aborted, post the summary, and return.
+
+    Centralizes the abort path shared by every failure point in ``execute_plan``:
+    log the error, append the ``StepResult``, set ``aborted``/``abort_reason``,
+    post the summary comment on the source Issue, and hand ``result`` back so the
+    caller can ``return _abort(...)`` in a single line.
+    """
+    logger.error(f"[executor] {step_result.step_id} — {step_result.error}")
+    result.steps.append(step_result)
+    result.aborted = True
+    result.abort_reason = reason
+    _post_summary_comment(result, refresher=refresher, workspace=workspace)
+    return result
+
+
 def execute_plan(
     plan: XairPlan,
     workspaces: dict[str, str] | str,
     *,
+    system_prompt: str,
     refresher: TokenRefresher | None = None,
 ) -> ExecutionResult:
     """Run every step in topological order. Abort on first failure.
@@ -390,6 +415,10 @@ def execute_plan(
     the local path of a fresh checkout. A single string is accepted for
     backward-compat with single-repo plans (uses ``plan.default_repo`` as
     the key).
+
+    ``system_prompt`` is the consumer-supplied agent system prompt, passed
+    through to every step's agent run. xair is framework-only and ships no
+    prompt of its own — the consumer (bair, etc.) owns its conventions.
 
     When ``refresher`` is provided, mints a fresh GitHub App installation
     token before every push, PR creation, and summary comment. Required for
@@ -444,55 +473,59 @@ def execute_plan(
                 )
             except subprocess.CalledProcessError as e:
                 err = f"branch setup failed: {e.stderr or e.stdout or e}"
-                logger.error(f"[executor] {step.id} — {err}")
-                result.steps.append(StepResult(step_id=step.id, status="failure", error=err))
-                result.aborted = True
-                result.abort_reason = f"step {step.id} branch setup failed"
-                _post_summary_comment(result, refresher=refresher, workspace=issue_workspace)
-                return result
+                return _abort(
+                    result,
+                    StepResult(step_id=step.id, status="failure", error=err),
+                    f"step {step.id} branch setup failed",
+                    refresher=refresher,
+                    workspace=issue_workspace,
+                )
 
             edit_calls, turns, cost, agent_err = _run_agent_for_step(
-                step, step_base_branch, step_workspace
+                step, step_base_branch, step_workspace, system_prompt
             )
 
             if agent_err:
                 err = f"agent crashed: {agent_err}"
-                logger.error(f"[executor] {step.id} — {err}")
-                result.steps.append(StepResult(
-                    step_id=step.id, status="failure", branch=branch,
-                    error=err, edit_calls=edit_calls, turns=turns, cost_usd=cost,
-                ))
-                result.aborted = True
-                result.abort_reason = f"step {step.id} agent crashed"
-                _post_summary_comment(result, refresher=refresher, workspace=issue_workspace)
-                return result
+                return _abort(
+                    result,
+                    StepResult(
+                        step_id=step.id, status="failure", branch=branch,
+                        error=err, edit_calls=edit_calls, turns=turns, cost_usd=cost,
+                    ),
+                    f"step {step.id} agent crashed",
+                    refresher=refresher,
+                    workspace=issue_workspace,
+                )
 
             if edit_calls == 0:
                 err = "substance gate: agent invoked zero Edit/Write calls"
-                logger.error(f"[executor] {step.id} — {err}")
-                result.steps.append(StepResult(
-                    step_id=step.id, status="failure", branch=branch,
-                    error=err, edit_calls=0, turns=turns, cost_usd=cost,
-                ))
-                result.aborted = True
-                result.abort_reason = f"step {step.id} substance gate failed"
-                _post_summary_comment(result, refresher=refresher, workspace=issue_workspace)
-                return result
+                return _abort(
+                    result,
+                    StepResult(
+                        step_id=step.id, status="failure", branch=branch,
+                        error=err, edit_calls=0, turns=turns, cost_usd=cost,
+                    ),
+                    f"step {step.id} substance gate failed",
+                    refresher=refresher,
+                    workspace=issue_workspace,
+                )
 
             try:
                 _apply_fresh_token(refresher, step_workspace)
                 _commit_and_push(step, plan.issue, branch, step_workspace)
             except subprocess.CalledProcessError as e:
                 err = f"commit/push failed: {e.stderr or e.stdout or e}"
-                logger.error(f"[executor] {step.id} — {err}")
-                result.steps.append(StepResult(
-                    step_id=step.id, status="failure", branch=branch,
-                    error=err, edit_calls=edit_calls, turns=turns, cost_usd=cost,
-                ))
-                result.aborted = True
-                result.abort_reason = f"step {step.id} commit/push failed"
-                _post_summary_comment(result, refresher=refresher, workspace=issue_workspace)
-                return result
+                return _abort(
+                    result,
+                    StepResult(
+                        step_id=step.id, status="failure", branch=branch,
+                        error=err, edit_calls=edit_calls, turns=turns, cost_usd=cost,
+                    ),
+                    f"step {step.id} commit/push failed",
+                    refresher=refresher,
+                    workspace=issue_workspace,
+                )
 
             try:
                 _apply_fresh_token(refresher, step_workspace)
@@ -501,15 +534,16 @@ def execute_plan(
                 )
             except RuntimeError as e:
                 err = f"PR creation failed: {e}"
-                logger.error(f"[executor] {step.id} — {err}")
-                result.steps.append(StepResult(
-                    step_id=step.id, status="failure", branch=branch,
-                    error=err, edit_calls=edit_calls, turns=turns, cost_usd=cost,
-                ))
-                result.aborted = True
-                result.abort_reason = f"step {step.id} PR creation failed"
-                _post_summary_comment(result, refresher=refresher, workspace=issue_workspace)
-                return result
+                return _abort(
+                    result,
+                    StepResult(
+                        step_id=step.id, status="failure", branch=branch,
+                        error=err, edit_calls=edit_calls, turns=turns, cost_usd=cost,
+                    ),
+                    f"step {step.id} PR creation failed",
+                    refresher=refresher,
+                    workspace=issue_workspace,
+                )
 
             logger.info(f"[executor] {step.id} — PR: {pr_url}")
             result.steps.append(StepResult(
